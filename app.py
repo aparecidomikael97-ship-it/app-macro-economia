@@ -25,7 +25,6 @@ MOEDAS = {
     "BRL": "Real Brasileiro",
 }
 
-# Sensibilidade padrão ao Fed
 FED_SENS_PADRAO = {
     "USD": +1.00, "JPY": +0.35, "CHF": +0.35, "EUR": +0.10, "GBP": +0.15,
     "CAD": -0.40, "AUD": -0.60, "NZD": -0.60, "BRL": -0.80,
@@ -34,12 +33,11 @@ FED_IMPACTO_MAX = 20.0
 HIST_SCORES = "historico_scores.parquet"
 HIST_COTACOES = "historico_cotacoes.parquet"
 
-# ─── CHAVES DE API ───
 CHAVE_NEWSAPI = st.secrets.get("CHAVE_NEWSAPI", "88b2debd36ba4f80a0a5484a78eb1bac")
 CHAVE_FRED = st.secrets.get("CHAVE_FRED", "22b2dfe684f07debde0a4a9ca4e0ac5c")
 
 # ═══════════════════════════════════════════════════════════════════
-# BARRA LATERAL — PARÂMETROS AJUSTÁVEIS (NOVO!)
+# BARRA LATERAL
 # ═══════════════════════════════════════════════════════════════════
 st.sidebar.header("⚙️ Parâmetros do Modelo")
 
@@ -66,7 +64,7 @@ st.sidebar.divider()
 st.sidebar.caption(f"🕒 Atualizado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
 
 # ═══════════════════════════════════════════════════════════════════
-# FUNÇÕES DE DADOS — FRED + BCB + NEWSAPI + RSS
+# FUNÇÕES DE DADOS
 # ═══════════════════════════════════════════════════════════════════
 STATUS_FONTE = {}
 
@@ -172,7 +170,7 @@ def carregar_dados_eco() -> dict:
             juros, inflacao, pib = (_fred_ultimo(sid_j), _fred_ultimo(sid_i), _fred_ultimo(sid_p))
             fonte = "FRED"
         ok = all(v is not None for v in (juros, inflacao, pib))
-        STATUS_FONTE[cod] = f"✅ {fonte}" if ok else f"⚠️ {fonte} (dados recentes indisponíveis)"
+        STATUS_FONTE[cod] = f"✅ {fonte}" if ok else f"⚠️ {fonte} (dados indisponíveis)"
         dados[cod] = {
             "juros": juros if juros is not None else demo["juros"],
             "inflacao": inflacao if inflacao is not None else demo["inflacao"],
@@ -207,7 +205,7 @@ def carregar_narrativa_fed() -> dict:
     }
 
 # ═══════════════════════════════════════════════════════════════════
-# MOTOR DE PONTUAÇÃO E PROBABILIDADE
+# MOTOR DE PONTUAÇÃO
 # ═══════════════════════════════════════════════════════════════════
 def normalizar(s: pd.Series, inverter: bool = False) -> pd.Series:
     if s.max() == s.min():
@@ -249,7 +247,7 @@ def probabilidade(ptsA: float, ptsB: float):
     return stt, p, f"Diferença: {diff:+.1f} pts | ESCALA={ESCALA_PROB:.1f}"
 
 # ═══════════════════════════════════════════════════════════════════
-# HISTÓRICO E SNAPSHOTS
+# HISTÓRICO
 # ═══════════════════════════════════════════════════════════════════
 def salvar_snapshot(df_ranking: pd.DataFrame):
     snap = df_ranking[["Código", "Pontuação_Pura", "Pontuação_Com_Fed"]].copy()
@@ -270,27 +268,6 @@ def carregar_historico():
         return pd.read_parquet(HIST_SCORES)
     except FileNotFoundError:
         return pd.DataFrame()
-
-# ═══════════════════════════════════════════════════════════════════
-# BACKTEST E CALIBRAÇÃO MATEMÁTICA
-# ═══════════════════════════════════════════════════════════════════
-def reg_logistica_simples(x: np.ndarray, y: np.ndarray, iters=2000, lr=0.1):
-    x = np.asarray(x, float); y = np.asarray(y, float)
-    xs = (x - x.mean()) / (x.std() + 1e-9)
-    b0 = b1 = 0.0
-    for _ in range(iters):
-        z = b0 + b1 * xs
-        p = 1 / (1 + np.exp(-z))
-        b0 -= lr * (p - y).mean()
-        b1 -= lr * ((p - y) * xs).mean()
-    b1_real = b1 / (x.std() + 1e-9)
-    b0_real = b0 - b1 * x.mean() / (x.std() + 1e-9)
-    return b0_real, b1_real
-
-def brier(y, p): return float(np.mean((np.asarray(p) - np.asarray(y)) ** 2))
-def logloss(y, p):
-    p = np.clip(np.asarray(p), 1e-6, 1 - 1e-6)
-    return float(-np.mean(np.asarray(y)*np.log(p) + (1-np.asarray(y))*np.log(1-p)))
 
 # ═══════════════════════════════════════════════════════════════════
 # EXECUÇÃO PRINCIPAL
@@ -389,7 +366,7 @@ with aba3:
         st.caption(f"Total de {hist['data'].nunique()} dias registrados")
         st.dataframe(hist.sort_values("data", ascending=False), use_container_width=True)
 
-# ─── ABA 4: BACKTEST & CALIBRAÇÃO ───
+# ─── ABA 4: BACKTEST ───
 with aba4:
     st.subheader("📈 Calibração do Modelo")
     st.caption("Ajuste a ESCALA_PROB para maximizar a qualidade da previsão")
@@ -404,5 +381,3 @@ with aba4:
         - 🟡 **Brier 0.12–0.20** → Previsão razoável
         - 🔴 **Brier > 0.25** → Equivale a chute 50/50 (ajuste os pesos)
         """)
-        st.markdown("---")
-        st.caption("Colete mais dados e o modelo vai se aperfeiçoando sozinho!")
